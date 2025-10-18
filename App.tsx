@@ -29,6 +29,8 @@ const App: React.FC = () => {
         }
     }, [currentUser, loading]);
 
+    // This is the crucial change. We wait for Firebase auth to be fully resolved
+    // before rendering any routes. This prevents the race condition.
     if (loading) {
         return (
             <div className="flex justify-center items-center h-screen bg-gray-100 dark:bg-gray-900">
@@ -40,7 +42,7 @@ const App: React.FC = () => {
     return (
         <Router>
             <Routes>
-                <Route path="/login" element={<LoginPage />} />
+                <Route path="/login" element={currentUser ? <Navigate to="/dashboard" /> : <LoginPage />} />
                 <Route 
                     path="/*"
                     element={
@@ -60,6 +62,8 @@ const App: React.FC = () => {
                                             <Route path="/accounts" element={<AccountsPage />} />
                                             <Route path="/settings" element={<SettingsPage />} />
                                             <Route path="/help" element={<HelpPage />} />
+                                            {/* Catch-all for any other authenticated routes */}
+                                            <Route path="*" element={<Navigate to="/dashboard" />} />
                                         </Routes>
                                     </main>
                                     <AddToHomeScreenPrompt />
@@ -68,7 +72,6 @@ const App: React.FC = () => {
                         </PrivateRoute>
                     }
                 />
-                 <Route path="*" element={<Navigate to={currentUser ? "/" : "/login"} />} />
             </Routes>
         </Router>
     );
