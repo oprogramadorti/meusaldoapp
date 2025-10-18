@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Transaction, TransactionType, Category, Subcategory } from '../types';
-import PlusIcon from './icons/PlusIcon';
 import PencilIcon from './icons/PencilIcon';
 import TrashIcon from './icons/TrashIcon';
 import ConfirmationModal from './ConfirmationModal';
@@ -9,6 +8,7 @@ import ChevronLeftIcon from './icons/ChevronLeftIcon';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 import EllipsisVerticalIcon from './icons/EllipsisVerticalIcon';
 import CalendarXMarkIcon from './icons/CalendarXMarkIcon'; // Assuming this is the calendar icon from the image
+import FloatingActionButton from './FloatingActionButton';
 
 const TransactionsPage: React.FC = () => {
     const { 
@@ -195,10 +195,6 @@ const TransactionsPage: React.FC = () => {
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <h2 className="text-3xl font-bold text-gray-800 dark:text-white">Transações</h2>
-                <button onClick={openModalForNew} className="flex items-center justify-center gap-2 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition shadow-md w-full sm:w-auto">
-                    <PlusIcon className="w-5 h-5" />
-                    <span>Adicionar Transação</span>
-                </button>
             </div>
 
             <div className="bg-red-600 text-white flex items-center justify-between p-2 rounded-lg shadow-lg">
@@ -315,6 +311,8 @@ const TransactionsPage: React.FC = () => {
             )}
 
             <ConfirmationModal isOpen={!!transactionToDelete} onClose={() => setTransactionToDelete(null)} onConfirm={handleDelete} title="Confirmar Exclusão" message="Tem certeza de que deseja excluir esta transação? Esta ação não pode ser desfeita."/>
+        
+            <FloatingActionButton onClick={openModalForNew} />
         </div>
     );
 };
