@@ -4,6 +4,7 @@ import {
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword,
     signInWithRedirect,
+    sendPasswordResetEmail,
     GoogleAuthProvider
 } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -21,6 +22,12 @@ const LoginPage: React.FC = () => {
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
     const navigate = useNavigate();
+
+    // State for forgot password modal
+    const [isForgotPasswordModalOpen, setIsForgotPasswordModalOpen] = useState(false);
+    const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+    const [forgotPasswordMessage, setForgotPasswordMessage] = useState({ type: '', text: '' });
+    const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
 
     useEffect(() => {
         const rememberedEmail = localStorage.getItem('rememberedEmail');
@@ -65,8 +72,11 @@ const LoginPage: React.FC = () => {
                 case 'auth/weak-password':
                     setError('A senha deve ter pelo menos 6 caracteres.');
                     break;
+                case 'auth/invalid-api-key':
+                     setError('Erro de configuração: A chave da API do Firebase é inválida. Verifique o arquivo firebase.ts.');
+                     break;
                 default:
-                    setError('Ocorreu um erro. Tente novamente.');
+                    setError('Ocorreu um erro. Verifique suas credenciais ou a configuração do Firebase.');
                     break;
             }
             console.error(err);
@@ -80,6 +90,41 @@ const LoginPage: React.FC = () => {
         } catch (err) {
             setError('Falha ao iniciar o login com o Google. Tente novamente.');
             console.error(err);
+        }
+    };
+
+    const openForgotPasswordModal = () => {
+        setForgotPasswordEmail('');
+        setForgotPasswordMessage({ type: '', text: '' });
+        setError('');
+        setIsForgotPasswordModalOpen(true);
+    };
+
+    const handleForgotPassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSendingResetEmail(true);
+        setForgotPasswordMessage({ type: '', text: '' });
+        try {
+            await sendPasswordResetEmail(auth, forgotPasswordEmail);
+            setForgotPasswordMessage({ type: 'success', text: 'E-mail de recuperação enviado! Verifique sua caixa de entrada e pasta de spam.' });
+        } catch (error: any) {
+            console.error("Password reset error:", error);
+            switch (error.code) {
+                case 'auth/user-not-found':
+                    setForgotPasswordMessage({ type: 'error', text: 'Nenhum usuário encontrado com este e-mail.' });
+                    break;
+                case 'auth/invalid-email':
+                    setForgotPasswordMessage({ type: 'error', text: 'O formato do e-mail é inválido. Verifique e tente novamente.' });
+                    break;
+                case 'auth/too-many-requests':
+                    setForgotPasswordMessage({ type: 'error', text: 'Muitas tentativas. Por favor, aguarde um momento antes de tentar novamente.' });
+                    break;
+                default:
+                    setForgotPasswordMessage({ type: 'error', text: 'Ocorreu um erro ao enviar o e-mail. Verifique a configuração do Firebase e sua conexão.' });
+                    break;
+            }
+        } finally {
+            setIsSendingResetEmail(false);
         }
     };
 
@@ -148,6 +193,13 @@ const LoginPage: React.FC = () => {
                                 />
                                 <span className="ml-2">Lembrar-me</span>
                             </label>
+                            <button
+                                type="button"
+                                onClick={openForgotPasswordModal}
+                                className="text-sm font-semibold text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                                Esqueceu a senha?
+                            </button>
                         </div>
                     )}
 
@@ -186,6 +238,52 @@ const LoginPage: React.FC = () => {
                     </button>
                 </p>
             </div>
+
+            {isForgotPasswordModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={() => setIsForgotPasswordModalOpen(false)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                        <form onSubmit={handleForgotPassword} className="p-8 space-y-4">
+                            <h3 className="text-xl font-bold text-center">Recuperar Senha</h3>
+                            <p className="text-sm text-center text-gray-600 dark:text-gray-400">
+                                Insira seu e-mail e enviaremos um link para você voltar a acessar sua conta.
+                            </p>
+                            {forgotPasswordMessage.text && (
+                                <div className={`p-3 text-center text-sm rounded-md ${
+                                    forgotPasswordMessage.type === 'success' 
+                                    ? 'text-green-800 bg-green-100 dark:text-green-200 dark:bg-green-900/50' 
+                                    : 'text-red-800 bg-red-100 dark:text-red-200 dark:bg-red-900/50'
+                                }`}>
+                                    {forgotPasswordMessage.text}
+                                </div>
+                            )}
+                            <input
+                                type="email"
+                                value={forgotPasswordEmail}
+                                onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                                placeholder="Seu e-mail cadastrado"
+                                required
+                                className="w-full px-4 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <div className="flex justify-end gap-4 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsForgotPasswordModalOpen(false)}
+                                    className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 py-2 px-4 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSendingResetEmail}
+                                    className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-blue-400"
+                                >
+                                    {isSendingResetEmail ? 'Enviando...' : 'Enviar E-mail'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

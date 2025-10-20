@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { TransactionType } from '../types';
 import TrashIcon from './icons/TrashIcon';
@@ -11,6 +11,7 @@ const CategoriesPage: React.FC = () => {
   const [newSubcategory, setNewSubcategory] = useState('');
   const [parentCategory, setParentCategory] = useState('');
   const [itemToDelete, setItemToDelete] = useState<{ id: string; type: 'category' | 'subcategory' } | null>(null);
+  const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
 
   const handleAddCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +53,29 @@ const CategoriesPage: React.FC = () => {
           </span>
       )
   }
+
+  const filteredCategories = useMemo(() => {
+    if (filterType === 'all') {
+      return categories;
+    }
+    return categories.filter(category => category.type === filterType);
+  }, [categories, filterType]);
+
+  const FilterButton: React.FC<{ label: string; type: 'all' | TransactionType; }> = ({ label, type }) => {
+    const isActive = filterType === type;
+    return (
+      <button
+        onClick={() => setFilterType(type)}
+        className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+          isActive
+            ? 'bg-blue-600 text-white shadow'
+            : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'
+        }`}
+      >
+        {label}
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-8">
@@ -120,8 +144,15 @@ const CategoriesPage: React.FC = () => {
       {/* List Categories and Subcategories */}
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
         <h3 className="text-xl font-bold mb-4">Categorias Existentes</h3>
+        
+        <div className="flex items-center gap-2 mb-4">
+            <FilterButton label="Todos" type="all" />
+            <FilterButton label="Débito" type={TransactionType.DEBIT} />
+            <FilterButton label="Crédito" type={TransactionType.CREDIT} />
+        </div>
+
         <div className="space-y-4">
-          {categories.length > 0 ? categories.map(category => (
+          {filteredCategories.length > 0 ? filteredCategories.map(category => (
             <div key={category.id} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -139,7 +170,7 @@ const CategoriesPage: React.FC = () => {
                 ))}
               </ul>
             </div>
-          )) : <p className="text-center text-gray-600 py-5">Nenhuma categoria criada ainda.</p>}
+          )) : <p className="text-center text-gray-600 py-5">Nenhuma categoria encontrada para o filtro selecionado.</p>}
         </div>
       </div>
 

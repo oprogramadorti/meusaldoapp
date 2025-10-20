@@ -203,7 +203,7 @@ const TransactionsPage: React.FC = () => {
                 <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-red-700 transition-colors"><ChevronRightIcon className="w-6 h-6"/></button>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
                 {filteredTransactions.length > 0 ? (
                     <ul className="divide-y divide-gray-200 dark:divide-gray-700">
                         {filteredTransactions.map(t => <TransactionItem key={t.id} transaction={t} />)}

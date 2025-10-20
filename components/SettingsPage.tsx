@@ -1,15 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import FingerPrintIcon from './icons/FingerPrintIcon';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { useAuth } from '../context/AuthContext';
+import { auth } from '../firebase';
+import KeyIcon from './icons/KeyIcon';
+import EyeIcon from './icons/EyeIcon';
+import EyeSlashIcon from './icons/EyeSlashIcon';
 
 const SettingsPage: React.FC = () => {
     const { evolutionAPISettings, setEvolutionAPISettings, sendTestMessage } = useAppContext();
+    const { currentUser } = useAuth();
     
     const [settings, setSettings] = useState(evolutionAPISettings);
     const [testPhoneNumber, setTestPhoneNumber] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
     const [biometricSupport, setBiometricSupport] = useState<boolean | null>(null);
+
+    // State for password change
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordError, setPasswordError] = useState('');
+    const [passwordSuccess, setPasswordSuccess] = useState('');
+    const [isPasswordChanging, setIsPasswordChanging] = useState(false);
+    const [isCurrentPasswordVisible, setIsCurrentPasswordVisible] = useState(false);
+    const [isNewPasswordVisible, setIsNewPasswordVisible] = useState(false);
+    const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+
 
     useEffect(() => {
         setSettings(evolutionAPISettings);
@@ -53,6 +72,50 @@ const SettingsPage: React.FC = () => {
             // Enable
             localStorage.setItem('biometricUnlockEnabled', 'true');
             setIsBiometricEnabled(true);
+        }
+    };
+
+    const handleChangePassword = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setPasswordError('');
+        setPasswordSuccess('');
+    
+        if (newPassword !== confirmPassword) {
+            setPasswordError('As novas senhas não coincidem.');
+            return;
+        }
+        if (newPassword.length < 6) {
+            setPasswordError('A nova senha deve ter pelo menos 6 caracteres.');
+            return;
+        }
+    
+        setIsPasswordChanging(true);
+        try {
+            if (!currentUser || !currentUser.email) {
+                throw new Error("Usuário não encontrado ou sem e-mail associado.");
+            }
+            
+            const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+            await reauthenticateWithCredential(currentUser, credential);
+            
+            await updatePassword(currentUser, newPassword);
+            
+            setPasswordSuccess('Senha alterada com sucesso!');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmPassword('');
+    
+        } catch (error: any) {
+            console.error("Error changing password:", error);
+            if (error.code === 'auth/wrong-password') {
+                setPasswordError('A senha atual está incorreta.');
+            } else if (error.code === 'auth/too-many-requests') {
+                setPasswordError('Muitas tentativas. Tente novamente mais tarde.');
+            } else {
+                setPasswordError('Ocorreu um erro ao alterar a senha.');
+            }
+        } finally {
+            setIsPasswordChanging(false);
         }
     };
 
@@ -157,6 +220,63 @@ const SettingsPage: React.FC = () => {
                     </div>
                  </div>
             </div>
+
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                    <KeyIcon className="w-6 h-6" /> Alterar Senha
+                </h3>
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                    {passwordError && <p className="text-red-600 text-sm">{passwordError}</p>}
+                    {passwordSuccess && <p className="text-green-600 text-sm">{passwordSuccess}</p>}
+                    <div className="relative">
+                        <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Senha Atual</label>
+                        <input
+                            type={isCurrentPasswordVisible ? 'text' : 'password'}
+                            id="currentPassword"
+                            value={currentPassword}
+                            onChange={e => setCurrentPassword(e.target.value)}
+                            className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 pr-10"
+                            required
+                        />
+                        <button type="button" onClick={() => setIsCurrentPasswordVisible(!isCurrentPasswordVisible)} className="absolute inset-y-0 right-0 top-6 px-3 flex items-center text-gray-500 dark:text-gray-400">
+                            {isCurrentPasswordVisible ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                        </button>
+                    </div>
+                     <div className="relative">
+                        <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nova Senha</label>
+                        <input
+                            type={isNewPasswordVisible ? 'text' : 'password'}
+                            id="newPassword"
+                            value={newPassword}
+                            onChange={e => setNewPassword(e.target.value)}
+                            className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 pr-10"
+                            required
+                        />
+                        <button type="button" onClick={() => setIsNewPasswordVisible(!isNewPasswordVisible)} className="absolute inset-y-0 right-0 top-6 px-3 flex items-center text-gray-500 dark:text-gray-400">
+                            {isNewPasswordVisible ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                        </button>
+                    </div>
+                     <div className="relative">
+                        <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Confirmar Nova Senha</label>
+                        <input
+                            type={isConfirmPasswordVisible ? 'text' : 'password'}
+                            id="confirmPassword"
+                            value={confirmPassword}
+                            onChange={e => setConfirmPassword(e.target.value)}
+                            className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 pr-10"
+                            required
+                        />
+                         <button type="button" onClick={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)} className="absolute inset-y-0 right-0 top-6 px-3 flex items-center text-gray-500 dark:text-gray-400">
+                            {isConfirmPasswordVisible ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                        </button>
+                    </div>
+                    <div className="text-right">
+                        <button type="submit" disabled={isPasswordChanging} className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition disabled:bg-gray-400">
+                            {isPasswordChanging ? 'Salvando...' : 'Salvar Nova Senha'}
+                        </button>
+                    </div>
+                </form>
+            </div>
             
              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h3 className="text-xl font-bold mb-2 border-b pb-2 border-gray-200 dark:border-gray-700 flex items-center gap-2">
@@ -176,10 +296,10 @@ const SettingsPage: React.FC = () => {
                             <button
                                 id="biometricToggle"
                                 onClick={handleBiometricToggle}
-                                className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors ${isBiometricEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'}`}
+                                className={`relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${isBiometricEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'}`}
                                 aria-pressed={isBiometricEnabled}
                             >
-                                <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${isBiometricEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform ring-0 transition ease-in-out duration-200 ${isBiometricEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
                         </div>
                          <p className="mt-4 text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 p-2 rounded-md">

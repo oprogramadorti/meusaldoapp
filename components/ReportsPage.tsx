@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Transaction, TransactionType, Category } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -6,6 +6,20 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recha
 const ReportsPage: React.FC = () => {
   const { transactions, categories, accounts } = useAppContext();
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+        setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+        window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
 
   const handlePreviousMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -64,14 +78,38 @@ const ReportsPage: React.FC = () => {
     }
     return transaction.isPaid ? 'text-gray-600 dark:text-gray-400' : 'text-red-600';
   };
+  
+  const RADIAN = Math.PI / 180;
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    
+    // Do not render label for very small slices to avoid clutter
+    if (percent * 100 < 5) return null;
+
+    return (
+      <text
+        x={x}
+        y={y}
+        fill="white"
+        textAnchor="middle"
+        dominantBaseline="central"
+        style={{ fontSize: '12px', fontWeight: 'bold' }}
+      >
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
+
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+      <div className="text-center">
         <h2 className="text-3xl font-bold text-gray-800 dark:text-white">Relatório Mensal</h2>
-        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-1 rounded-lg shadow">
+        <div className="mt-4 inline-flex items-center gap-2 bg-white dark:bg-gray-800 p-1 rounded-lg shadow">
           <button onClick={handlePreviousMonth} className="px-3 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">&lt;</button>
-          <span className="font-semibold w-32 text-center">{currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span>
+          <span className="font-semibold w-32 text-center capitalize">{currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span>
           <button onClick={handleNextMonth} className="px-3 py-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700">&gt;</button>
         </div>
       </div>
@@ -107,11 +145,11 @@ const ReportsPage: React.FC = () => {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      outerRadius={100}
+                      outerRadius={isMobile ? 80 : 100}
                       fill="#8884d8"
                       dataKey="value"
                       nameKey="name"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={isMobile ? renderCustomizedLabel : ({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                     >
                       {expenseByCategory.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
