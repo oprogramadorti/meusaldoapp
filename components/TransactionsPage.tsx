@@ -28,9 +28,9 @@ const TransactionsPage: React.FC = () => {
     const [enableBilling, setEnableBilling] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     
-    const initialFormData: Omit<Transaction, 'id'> = {
+    const initialFormData = {
         description: '',
-        amount: 0,
+        amount: '' as (number | ''),
         date: new Date().toISOString().split('T')[0],
         dueDate: '',
         type: TransactionType.DEBIT,
@@ -41,7 +41,7 @@ const TransactionsPage: React.FC = () => {
         creditorName: '',
         creditorPhone: ''
     };
-    const [formData, setFormData] = useState<Omit<Transaction, 'id'>>(initialFormData);
+    const [formData, setFormData] = useState(initialFormData);
 
     const availableCategories = useMemo(() => categories.filter(c => c.type === formData.type), [formData.type, categories]);
     const availableSubcategories = useMemo(() => formData.categoryId ? subcategories.filter(sc => sc.categoryId === formData.categoryId) : [], [formData.categoryId, subcategories]);
@@ -55,7 +55,7 @@ const TransactionsPage: React.FC = () => {
             setFormData(prev => ({ ...prev, type: value as TransactionType, categoryId: '', subcategoryId: '' }));
             if(value !== TransactionType.CREDIT) setEnableBilling(false);
         } else {
-            setFormData(prev => ({ ...prev, [name]: name === 'amount' ? parseFloat(value) || 0 : value }));
+            setFormData(prev => ({ ...prev, [name]: value }));
         }
     };
     
@@ -74,7 +74,7 @@ const TransactionsPage: React.FC = () => {
         transactions.filter(t => {
             const transactionDate = new Date(t.date);
             return transactionDate.getMonth() === currentDate.getMonth() && transactionDate.getFullYear() === currentDate.getFullYear();
-        }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
         [transactions, currentDate]
     );
 
@@ -100,19 +100,26 @@ const TransactionsPage: React.FC = () => {
     
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        let finalFormData = { ...formData };
-        if (!finalFormData.dueDate) {
-            delete finalFormData.dueDate;
-        }
-        if (finalFormData.type === TransactionType.CREDIT && !enableBilling) {
-            finalFormData.creditorName = undefined;
-            finalFormData.creditorPhone = undefined;
-        }
+        
+        const payload: Omit<Transaction, 'id'> = {
+            description: formData.description,
+            amount: parseFloat(String(formData.amount)) || 0,
+            date: formData.date,
+            type: formData.type,
+            categoryId: formData.categoryId,
+            accountId: formData.accountId,
+            isPaid: formData.isPaid,
+            // Optional fields are only included if they have a value
+            ...(formData.dueDate && { dueDate: formData.dueDate }),
+            ...(formData.subcategoryId && { subcategoryId: formData.subcategoryId }),
+            ...(formData.type === TransactionType.CREDIT && enableBilling && formData.creditorName && { creditorName: formData.creditorName }),
+            ...(formData.type === TransactionType.CREDIT && enableBilling && formData.creditorPhone && { creditorPhone: formData.creditorPhone }),
+        };
 
         if (editingTransaction) {
-            updateTransaction({ ...finalFormData, id: editingTransaction.id });
+            updateTransaction({ ...payload, id: editingTransaction.id });
         } else {
-            addTransaction(finalFormData);
+            addTransaction(payload);
         }
         setIsModalOpen(false);
     };

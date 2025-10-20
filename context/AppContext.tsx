@@ -253,26 +253,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Due date reminders
   useEffect(() => {
     const checkDueDates = () => {
+      // Helper to get YYYY-MM-DD string from a Date object based on local timezone
+      const getLocalDateString = (date: Date) => {
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const localToday = new Date();
+      const localTodayStr = getLocalDateString(localToday);
+
       const lastCheck = localStorage.getItem('lastDueDateCheck');
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (lastCheck === todayStr) {
+      if (lastCheck === localTodayStr) {
         console.log("Due date check already performed today.");
         return;
       }
+      console.log(`Performing daily due date check for ${localTodayStr}.`);
 
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
+      const localTomorrow = new Date();
+      localTomorrow.setDate(localToday.getDate() + 1);
+      const tomorrowStr = getLocalDateString(localTomorrow);
 
       const upcomingTransactions = transactions.filter(t => {
-          if (t.isPaid || !t.dueDate) return false;
-          const dueDate = new Date(t.dueDate);
-          if (dueDate < today) return false;
-          const timeDiff = dueDate.getTime() - today.getTime();
-          const dayDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
-          return dayDiff === 1; // Due tomorrow
+          // Direct string comparison is safe and avoids all timezone issues.
+          // We check for transactions where the dueDate string is exactly tomorrow's date string.
+          return !t.isPaid && t.dueDate === tomorrowStr;
       });
       
       if (upcomingTransactions.length > 0) {
+          console.log(`Found ${upcomingTransactions.length} transactions due tomorrow (${tomorrowStr}).`);
           const debitsToRemind = upcomingTransactions.filter(t => t.type === TransactionType.DEBIT);
           const creditsToCharge = upcomingTransactions.filter(t => t.type === TransactionType.CREDIT);
 
@@ -286,13 +296,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               creditsToCharge.forEach(sendPaymentReminder);
           }
 
-          localStorage.setItem('lastDueDateCheck', todayStr);
+          localStorage.setItem('lastDueDateCheck', localTodayStr);
+      } else {
+        console.log(`No transactions due tomorrow (${tomorrowStr}).`);
       }
     };
     
-    // Check on load and then every 12 hours
+    // Check on load and then every hour. 12 hours is too long if the user only opens the app briefly.
     const timeoutId = setTimeout(checkDueDates, 5000); // Check 5s after app loads
-    const interval = setInterval(checkDueDates, 1000 * 60 * 60 * 12); 
+    const interval = setInterval(checkDueDates, 1000 * 60 * 60 * 1); // Check every hour
     return () => {
         clearInterval(interval);
         clearTimeout(timeoutId);
