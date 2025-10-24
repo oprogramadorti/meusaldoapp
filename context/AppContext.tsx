@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useCallback, useState, use
 import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query } from 'firebase/firestore';
 import { db } from '../firebase';
 import useLocalStorage from '../hooks/useLocalStorage';
+import { v4 as uuidv4 } from 'uuid';
 import { 
     Transaction, 
     Category, 
@@ -83,9 +84,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 
   // Transactions
-  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
+  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>, installments = 1) => {
     if (!currentUser) return;
-    await addDoc(collection(db, `users/${currentUser.uid}/transactions`), transaction);
+
+    if (installments > 1) {
+        const recurrenceId = uuidv4();
+        for (let i = 0; i < installments; i++) {
+            const installmentDate = new Date(transaction.date + 'T00:00:00Z');
+            installmentDate.setUTCMonth(installmentDate.getUTCMonth() + i);
+
+            let installmentDueDate: Date | null = null;
+            if (transaction.dueDate) {
+                installmentDueDate = new Date(transaction.dueDate + 'T00:00:00Z');
+                installmentDueDate.setUTCMonth(installmentDueDate.getUTCMonth() + i);
+            }
+            
+            const installmentTransaction: Omit<Transaction, 'id'> = {
+                ...transaction,
+                description: `${transaction.description} (${i + 1}/${installments})`,
+                date: installmentDate.toISOString().split('T')[0],
+                dueDate: installmentDueDate ? installmentDueDate.toISOString().split('T')[0] : undefined,
+                recurrenceId: recurrenceId,
+            };
+            await addDoc(collection(db, `users/${currentUser.uid}/transactions`), installmentTransaction);
+        }
+    } else {
+        await addDoc(collection(db, `users/${currentUser.uid}/transactions`), transaction);
+    }
   }, [currentUser]);
   const updateTransaction = useCallback(async (updatedTransaction: Transaction) => {
     if (!currentUser) return;

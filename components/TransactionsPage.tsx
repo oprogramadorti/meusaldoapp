@@ -27,6 +27,8 @@ const TransactionsPage: React.FC = () => {
     const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
     const [enableBilling, setEnableBilling] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
+    const [isRecurring, setIsRecurring] = useState(false);
+    const [installments, setInstallments] = useState<number | ''>(2);
     
     const initialFormData = {
         description: '',
@@ -84,6 +86,8 @@ const TransactionsPage: React.FC = () => {
         setEnableBilling(false);
         setIsModalOpen(true);
         setActiveMenu(null);
+        setIsRecurring(false);
+        setInstallments(2);
     };
 
     const openModalForEdit = (transaction: Transaction) => {
@@ -119,7 +123,7 @@ const TransactionsPage: React.FC = () => {
         if (editingTransaction) {
             updateTransaction({ ...payload, id: editingTransaction.id });
         } else {
-            addTransaction(payload);
+            addTransaction(payload, isRecurring ? Number(installments) : 1);
         }
         setIsModalOpen(false);
     };
@@ -244,7 +248,7 @@ const TransactionsPage: React.FC = () => {
                                     <input type="text" name="description" value={formData.description} onChange={handleFormChange} required className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Valor</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Valor {isRecurring && '(por parcela)'}</label>
                                     <input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleFormChange} required className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
                                 </div>
                                 <div>
@@ -277,6 +281,23 @@ const TransactionsPage: React.FC = () => {
                                     </select>
                                 </div>
                             </div>
+                            
+                            {!editingTransaction && (
+                                <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <label htmlFor="isRecurringToggle" className="text-sm font-medium text-gray-700 dark:text-gray-300">Lançamento parcelado?</label>
+                                        <button type="button" id="isRecurringToggle" onClick={() => setIsRecurring(!isRecurring)} className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors ${isRecurring ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'}`} aria-pressed={isRecurring}>
+                                            <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${isRecurring ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                    {isRecurring && (
+                                        <div className="animate-fade-in-up">
+                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nº de parcelas</label>
+                                            <input type="number" min="2" max="120" value={installments} onChange={(e) => setInstallments(e.target.value === '' ? '' : parseInt(e.target.value, 10))} required={isRecurring} className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"/>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                              {formData.type === TransactionType.DEBIT && (
                                 <div className="flex items-center gap-2 pt-2">

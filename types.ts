@@ -15,11 +15,10 @@ export interface Transaction {
   categoryId: string;
   subcategoryId?: string;
   accountId: string;
-  isRecurring?: boolean;
-  recurrenceEndDate?: string;
   isPaid?: boolean;
   creditorName?: string;
   creditorPhone?: string;
+  recurrenceId?: string; // To group installments of the same purchase
 }
 
 export interface Category {
@@ -53,7 +52,7 @@ export type Theme = 'light' | 'dark' | 'system';
 
 export interface AppContextType {
   transactions: Transaction[];
-  addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
+  addTransaction: (transaction: Omit<Transaction, 'id'>, installments?: number) => Promise<void>;
   updateTransaction: (transaction: Transaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   categories: Category[];
