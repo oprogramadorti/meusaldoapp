@@ -33,10 +33,10 @@ const ReportsPage: React.FC = () => {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const transactionDate = new Date(t.date);
-      return transactionDate.getMonth() === currentDate.getMonth() &&
-             transactionDate.getFullYear() === currentDate.getFullYear();
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const effectiveDateStr = t.dueDate || t.date;
+      const [year, month] = effectiveDateStr.split('-').map(Number);
+      return (month - 1) === currentDate.getMonth() && year === currentDate.getFullYear();
+    }).sort((a, b) => (b.dueDate || b.date).localeCompare(a.dueDate || a.date));
   }, [transactions, currentDate]);
 
   const monthlyIncome = useMemo(() => 
@@ -179,7 +179,12 @@ const ReportsPage: React.FC = () => {
                     <tr key={t.id} className="border-b dark:border-gray-700">
                       <td className="py-2">
                         <div>{t.description}</div>
-                        <div className="text-xs text-gray-600">{new Date(t.date).toLocaleDateString('pt-BR')}</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-300">
+                           {t.dueDate
+                                ? `Venc: ${new Date(t.dueDate).toLocaleDateString('pt-BR', {timeZone: 'UTC'})}`
+                                : new Date(t.date).toLocaleDateString('pt-BR', {timeZone: 'UTC'})
+                            }
+                        </div>
                       </td>
                       <td className={`py-2 text-right font-medium ${getAmountClass(t)}`}>
                         {t.type === TransactionType.DEBIT && '- '}{formatCurrency(t.amount)}

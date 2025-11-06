@@ -15,10 +15,12 @@ export interface Transaction {
   categoryId: string;
   subcategoryId?: string;
   accountId: string;
+  isRecurring?: boolean;
+  recurrenceEndDate?: string;
+  recurrenceId?: string;
   isPaid?: boolean;
   creditorName?: string;
   creditorPhone?: string;
-  recurrenceId?: string; // To group installments of the same purchase
 }
 
 export interface Category {
@@ -48,11 +50,17 @@ export interface EvolutionAPISettings {
     pixKey?: string;
 }
 
+export interface ReminderSettings {
+  isEnabled: boolean;
+  daysBefore: number;
+  messageTemplate: string;
+}
+
 export type Theme = 'light' | 'dark' | 'system';
 
 export interface AppContextType {
   transactions: Transaction[];
-  addTransaction: (transaction: Omit<Transaction, 'id'>, installments?: number) => Promise<void>;
+  addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
   updateTransaction: (transaction: Transaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   categories: Category[];
@@ -67,6 +75,8 @@ export interface AppContextType {
   deleteAccount: (id: string) => Promise<void>;
   evolutionAPISettings: EvolutionAPISettings;
   setEvolutionAPISettings: (settings: EvolutionAPISettings) => void;
+  reminderSettings: ReminderSettings;
+  setReminderSettings: (settings: ReminderSettings) => Promise<void>;
   sendTestMessage: (phoneNumber: string) => Promise<{ success: boolean; message: string }>;
   theme: Theme;
   setTheme: (theme: Theme) => void;

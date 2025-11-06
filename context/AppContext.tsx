@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useCallback, useState, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, writeBatch, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { v4 as uuidv4 } from 'uuid';
 import { 
     Transaction, 
     Category, 
@@ -11,9 +10,12 @@ import {
     TransactionType, 
     AppContextType,
     EvolutionAPISettings,
+    ReminderSettings,
     Theme
 } from '../types';
 import { useAuth } from './AuthContext';
+import { v4 as uuidv4 } from 'uuid';
+
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -25,6 +27,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // Fix: Renamed useState setter to avoid redeclaration.
+  const [reminderSettings, setReminderSettingsState] = useState<ReminderSettings>({
+    isEnabled: false,
+    daysBefore: 1,
+    messageTemplate: 'Olá {nome}! Lembrete: seu débito no valor de {valor} vence em breve.\n\nSegue chave PIX para pagamento: {pix}',
+  });
 
   // LocalStorage-backed state for settings
   const [evolutionAPISettings, setEvolutionAPISettings] = useLocalStorage<EvolutionAPISettings>('evolutionAPISettings', {
@@ -52,6 +60,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCategories([]);
         setSubcategories([]);
         setAccounts([]);
+        // Fix: Use the renamed useState setter.
+        setReminderSettingsState({
+            isEnabled: false,
+            daysBefore: 1,
+            messageTemplate: 'Olá {nome}! Lembrete: seu débito no valor de {valor} vence em breve.\n\nSegue chave PIX para pagamento: {pix}',
+        });
         return;
     }
 
@@ -73,45 +87,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Account[];
       setAccounts(data);
     });
+     const unsubscribeSettings = onSnapshot(doc(db, userRef, "settings", "reminders"), (doc) => {
+        if (doc.exists()) {
+            // Fix: Use the renamed useState setter.
+            setReminderSettingsState(doc.data() as ReminderSettings);
+        }
+    });
 
     return () => {
       unsubscribeTransactions();
       unsubscribeCategories();
       unsubscribeSubcategories();
       unsubscribeAccounts();
+      unsubscribeSettings();
     };
   }, [currentUser]);
 
 
   // Transactions
-  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>, installments = 1) => {
+  const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
     if (!currentUser) return;
-
-    if (installments > 1) {
-        const recurrenceId = uuidv4();
-        for (let i = 0; i < installments; i++) {
-            const installmentDate = new Date(transaction.date + 'T00:00:00Z');
-            installmentDate.setUTCMonth(installmentDate.getUTCMonth() + i);
-
-            let installmentDueDate: Date | null = null;
-            if (transaction.dueDate) {
-                installmentDueDate = new Date(transaction.dueDate + 'T00:00:00Z');
-                installmentDueDate.setUTCMonth(installmentDueDate.getUTCMonth() + i);
-            }
-            
-            const installmentTransaction: Omit<Transaction, 'id'> = {
-                ...transaction,
-                description: `${transaction.description} (${i + 1}/${installments})`,
-                date: installmentDate.toISOString().split('T')[0],
-                dueDate: installmentDueDate ? installmentDueDate.toISOString().split('T')[0] : undefined,
-                recurrenceId: recurrenceId,
-            };
-            await addDoc(collection(db, `users/${currentUser.uid}/transactions`), installmentTransaction);
+  
+    if (transaction.isRecurring && transaction.recurrenceEndDate) {
+      const batch = writeBatch(db);
+      const recurrenceId = uuidv4();
+  
+      // Use UTC noon to avoid timezone-related date shifts when parsing YYYY-MM-DD
+      const startDate = new Date(`${transaction.date}T12:00:00Z`);
+      const endDate = new Date(`${transaction.recurrenceEndDate}T12:00:00Z`);
+  
+      if (startDate > endDate) {
+        console.error("Recurrence start date cannot be after end date.");
+        // Optionally: show an error to the user
+        return;
+      }
+  
+      let currentDate = new Date(startDate);
+      const originalDay = startDate.getUTCDate();
+      
+      const hasDueDate = !!transaction.dueDate;
+      let dueDay: number | undefined;
+      let dueMonthOffset = 0;
+  
+      if (hasDueDate) {
+        const tempDueDate = new Date(`${transaction.dueDate}T12:00:00Z`);
+        dueDay = tempDueDate.getUTCDate();
+        const startMonthTotal = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
+        const dueMonthTotal = tempDueDate.getUTCFullYear() * 12 + tempDueDate.getUTCMonth();
+        dueMonthOffset = dueMonthTotal - startMonthTotal;
+      }
+  
+      const totalMonths = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 + (endDate.getUTCMonth() - startDate.getUTCMonth()) + 1;
+  
+      for (let i = 0; i < totalMonths && currentDate <= endDate; i++) {
+        const newTransactionDocRef = doc(collection(db, `users/${currentUser.uid}/transactions`));
+  
+        const newTransactionData: Omit<Transaction, 'id'> = {
+          ...transaction,
+          description: `${transaction.description} (${i + 1}/${totalMonths})`,
+          date: currentDate.toISOString().split('T')[0],
+          recurrenceId: recurrenceId,
+          isRecurring: true, 
+        };
+  
+        if (hasDueDate && dueDay !== undefined) {
+          let newDueDate = new Date(Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth() + dueMonthOffset, 1));
+          const lastDayOfDueMonth = new Date(Date.UTC(newDueDate.getUTCFullYear(), newDueDate.getUTCMonth() + 1, 0)).getUTCDate();
+          newDueDate.setUTCDate(Math.min(dueDay, lastDayOfDueMonth));
+          newTransactionData.dueDate = newDueDate.toISOString().split('T')[0];
         }
+  
+        batch.set(newTransactionDocRef, newTransactionData);
+  
+        // Move to the next month, preserving the day of the month correctly
+        const nextMonthDate = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i + 1, 1));
+        const lastDayOfNextMonth = new Date(Date.UTC(nextMonthDate.getUTCFullYear(), nextMonthDate.getUTCMonth() + 1, 0)).getUTCDate();
+        nextMonthDate.setUTCDate(Math.min(originalDay, lastDayOfNextMonth));
+        currentDate = nextMonthDate;
+      }
+  
+      await batch.commit();
     } else {
-        await addDoc(collection(db, `users/${currentUser.uid}/transactions`), transaction);
+      await addDoc(collection(db, `users/${currentUser.uid}/transactions`), transaction);
     }
   }, [currentUser]);
+
   const updateTransaction = useCallback(async (updatedTransaction: Transaction) => {
     if (!currentUser) return;
     const { id, ...dataToUpdate } = updatedTransaction;
@@ -159,6 +219,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!currentUser) return;
     // TODO: Implement cascading delete for related transactions
     await deleteDoc(doc(db, `users/${currentUser.uid}/accounts`, id));
+  }, [currentUser]);
+
+   // Reminder Settings
+  const setReminderSettings = useCallback(async (settings: ReminderSettings) => {
+    if (!currentUser) return;
+    const settingsRef = doc(db, `users/${currentUser.uid}/settings`, 'reminders');
+    // Ensure daysBefore is stored as a number
+    const settingsToSave = {
+        ...settings,
+        daysBefore: Number(settings.daysBefore)
+    };
+    await setDoc(settingsRef, settingsToSave, { merge: true });
   }, [currentUser]);
   
   // Evolution API
@@ -244,15 +316,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const sendPaymentReminder = useCallback(async (transaction: Transaction) => {
     const { serverUrl, instanceName, apiKey, pixKey } = evolutionAPISettings;
-    if (!serverUrl || !instanceName || !apiKey || !pixKey || !transaction.creditorPhone || !transaction.creditorName) {
+    if (!serverUrl || !instanceName || !apiKey || !transaction.creditorPhone || !transaction.creditorName) {
       console.log('Cannot send payment reminder, API settings or transaction data incomplete for:', transaction.description);
       return;
     }
 
     const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-    
     const formattedAmount = formatCurrency(transaction.amount);
-    let messageText = `Olá ${transaction.creditorName}! Seu débito vence amanhã no valor de ${formattedAmount}.\n\nSegue chave PIX para realizar o pagamento:\n*${pixKey}*`;
+
+    const messageText = reminderSettings.messageTemplate
+      .replace(/\{nome\}/g, transaction.creditorName)
+      .replace(/\{valor\}/g, formattedAmount)
+      .replace(/\{pix\}/g, pixKey || 'Não informada');
 
     const cleanUrl = serverUrl.endsWith('/') ? serverUrl.slice(0, -1) : serverUrl;
     const url = `${cleanUrl}/message/sendText/${instanceName}`;
@@ -272,13 +347,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (error) {
         console.error(`Error sending payment reminder for ${transaction.description}:`, error);
     }
-  }, [evolutionAPISettings]);
+  }, [evolutionAPISettings, reminderSettings]);
 
 
   // Due date reminders
   useEffect(() => {
     const checkDueDates = () => {
-      // Helper to get YYYY-MM-DD string from a Date object based on local timezone
       const getLocalDateString = (date: Date) => {
         const year = date.getFullYear();
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -296,45 +370,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       console.log(`Performing daily due date check for ${localTodayStr}.`);
 
+      // Logic for User's Debit Reminders (sent to user) - Fixed to 1 day before
       const localTomorrow = new Date();
       localTomorrow.setDate(localToday.getDate() + 1);
       const tomorrowStr = getLocalDateString(localTomorrow);
-
-      const upcomingTransactions = transactions.filter(t => {
-          // Direct string comparison is safe and avoids all timezone issues.
-          // We check for transactions where the dueDate string is exactly tomorrow's date string.
-          return !t.isPaid && t.dueDate === tomorrowStr;
-      });
       
-      if (upcomingTransactions.length > 0) {
-          console.log(`Found ${upcomingTransactions.length} transactions due tomorrow (${tomorrowStr}).`);
-          const debitsToRemind = upcomingTransactions.filter(t => t.type === TransactionType.DEBIT);
-          const creditsToCharge = upcomingTransactions.filter(t => t.type === TransactionType.CREDIT);
+      const debitsDueTomorrow = transactions.filter(t => 
+        t.type === TransactionType.DEBIT && 
+        !t.isPaid && 
+        t.dueDate === tomorrowStr
+      );
 
-          if (debitsToRemind.length > 0 && evolutionAPISettings.notificationPhoneNumber) {
-              console.log("Sending reminders for debits:", debitsToRemind);
-              sendReminderNotification(debitsToRemind);
-          }
-
-          if (creditsToCharge.length > 0) {
-              console.log("Sending payment reminders for credits:", creditsToCharge);
-              creditsToCharge.forEach(sendPaymentReminder);
-          }
-
-          localStorage.setItem('lastDueDateCheck', localTodayStr);
-      } else {
-        console.log(`No transactions due tomorrow (${tomorrowStr}).`);
+      if (debitsDueTomorrow.length > 0 && evolutionAPISettings.notificationPhoneNumber) {
+        console.log(`Sending user reminder for ${debitsDueTomorrow.length} debits due tomorrow.`);
+        sendReminderNotification(debitsDueTomorrow);
       }
+      
+      // Logic for Creditor Payment Reminders (sent to creditor) - Configurable
+      if (reminderSettings.isEnabled) {
+        const daysBefore = Number(reminderSettings.daysBefore) || 1;
+        const reminderTriggerDate = new Date();
+        reminderTriggerDate.setDate(localToday.getDate() + daysBefore);
+        const reminderTriggerDateStr = getLocalDateString(reminderTriggerDate);
+
+        const creditsToRemind = transactions.filter(t =>
+            t.type === TransactionType.CREDIT &&
+            !t.isPaid &&
+            t.dueDate === reminderTriggerDateStr &&
+            t.creditorPhone
+        );
+        
+        if (creditsToRemind.length > 0) {
+            console.log(`Found ${creditsToRemind.length} credits due in ${daysBefore} day(s). Sending payment reminders.`);
+            creditsToRemind.forEach(sendPaymentReminder);
+        }
+      }
+
+      localStorage.setItem('lastDueDateCheck', localTodayStr);
     };
     
-    // Check on load and then every hour. 12 hours is too long if the user only opens the app briefly.
+    // Check on load and then every hour.
     const timeoutId = setTimeout(checkDueDates, 5000); // Check 5s after app loads
     const interval = setInterval(checkDueDates, 1000 * 60 * 60 * 1); // Check every hour
     return () => {
         clearInterval(interval);
         clearTimeout(timeoutId);
     }
-  }, [transactions, evolutionAPISettings, sendReminderNotification, sendPaymentReminder]);
+  }, [transactions, evolutionAPISettings, reminderSettings, sendReminderNotification, sendPaymentReminder]);
 
   const value = useMemo(() => ({
     transactions,
@@ -353,6 +435,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteAccount,
     evolutionAPISettings,
     setEvolutionAPISettings,
+    reminderSettings,
+    setReminderSettings,
     sendTestMessage,
     theme,
     setTheme,
@@ -362,6 +446,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     subcategories, addSubcategory, deleteSubcategory,
     accounts, addAccount, updateAccount, deleteAccount,
     evolutionAPISettings, setEvolutionAPISettings,
+    reminderSettings, setReminderSettings,
     sendTestMessage,
     theme, setTheme,
   ]);

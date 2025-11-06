@@ -7,9 +7,16 @@ import { auth } from '../firebase';
 import KeyIcon from './icons/KeyIcon';
 import EyeIcon from './icons/EyeIcon';
 import EyeSlashIcon from './icons/EyeSlashIcon';
+import BellIcon from './icons/BellIcon';
 
 const SettingsPage: React.FC = () => {
-    const { evolutionAPISettings, setEvolutionAPISettings, sendTestMessage } = useAppContext();
+    const { 
+        evolutionAPISettings, 
+        setEvolutionAPISettings, 
+        sendTestMessage,
+        reminderSettings,
+        setReminderSettings
+    } = useAppContext();
     const { currentUser } = useAuth();
     
     const [settings, setSettings] = useState(evolutionAPISettings);
@@ -29,11 +36,19 @@ const SettingsPage: React.FC = () => {
     const [isNewPasswordVisible, setIsNewPasswordVisible] = useState(false);
     const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
 
+    // State for reminder settings
+    const [localReminderSettings, setLocalReminderSettings] = useState(reminderSettings);
+    const [isSavingReminders, setIsSavingReminders] = useState(false);
+    const [reminderSaveSuccess, setReminderSaveSuccess] = useState(false);
 
     useEffect(() => {
         setSettings(evolutionAPISettings);
     }, [evolutionAPISettings]);
     
+    useEffect(() => {
+        setLocalReminderSettings(reminderSettings);
+    }, [reminderSettings]);
+
     useEffect(() => {
         const checkSupport = async () => {
             if (window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()) {
@@ -119,6 +134,30 @@ const SettingsPage: React.FC = () => {
         }
     };
 
+    const handleReminderSettingsChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        const { name, value, type } = e.target;
+        const checked = (e.target as HTMLInputElement).checked;
+        setLocalReminderSettings(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
+    };
+
+    const handleSaveReminders = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSavingReminders(true);
+        try {
+            await setReminderSettings(localReminderSettings);
+            setReminderSaveSuccess(true);
+            setTimeout(() => setReminderSaveSuccess(false), 3000);
+        } catch (error) {
+            console.error("Failed to save reminder settings", error);
+            alert("Erro ao salvar configurações de lembrete.");
+        } finally {
+            setIsSavingReminders(false);
+        }
+    };
+
     return (
         <div className="space-y-8 max-w-4xl mx-auto">
             <h2 className="text-3xl font-bold text-gray-800 dark:text-white">Configurações</h2>
@@ -176,7 +215,7 @@ const SettingsPage: React.FC = () => {
                             className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"
                         />
                          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                           Este número será usado para receber lembretes de vencimento.
+                           Este número será usado para receber lembretes de vencimento de suas despesas.
                         </p>
                     </div>
                      <div>
@@ -194,7 +233,72 @@ const SettingsPage: React.FC = () => {
                         </p>
                     </div>
                     <div className="text-right">
-                        <button type="submit" className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition duration-300">Salvar</button>
+                        <button type="submit" className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition duration-300">Salvar API</button>
+                    </div>
+                </form>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                    <BellIcon className="w-6 h-6" /> Lembretes Automáticos de Cobrança
+                </h3>
+                <form onSubmit={handleSaveReminders} className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <label htmlFor="isEnabled" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Habilitar envio automático para créditos a receber
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => setLocalReminderSettings(p => ({ ...p, isEnabled: !p.isEnabled }))}
+                            className={`relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${localReminderSettings.isEnabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'}`}
+                        >
+                            <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform ring-0 transition ease-in-out duration-200 ${localReminderSettings.isEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
+
+                    <div className={!localReminderSettings.isEnabled ? 'opacity-50' : ''}>
+                        <div>
+                            <label htmlFor="daysBefore" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Enviar lembrete quantos dias antes do vencimento?
+                            </label>
+                            <input
+                                type="number"
+                                id="daysBefore"
+                                name="daysBefore"
+                                value={localReminderSettings.daysBefore}
+                                onChange={handleReminderSettingsChange}
+                                className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 disabled:cursor-not-allowed"
+                                min="1"
+                                required
+                                disabled={!localReminderSettings.isEnabled}
+                            />
+                        </div>
+
+                        <div className="mt-4">
+                            <label htmlFor="messageTemplate" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Modelo da Mensagem
+                            </label>
+                            <textarea
+                                id="messageTemplate"
+                                name="messageTemplate"
+                                value={localReminderSettings.messageTemplate}
+                                onChange={handleReminderSettingsChange}
+                                rows={5}
+                                className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 disabled:cursor-not-allowed"
+                                required
+                                disabled={!localReminderSettings.isEnabled}
+                            />
+                            <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">
+                                Variáveis disponíveis: <code className="font-mono bg-gray-200 dark:bg-gray-600 px-1 rounded">{'{nome}'}</code>, <code className="font-mono bg-gray-200 dark:bg-gray-600 px-1 rounded">{'{valor}'}</code>, <code className="font-mono bg-gray-200 dark:bg-gray-600 px-1 rounded">{'{pix}'}</code>.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="text-right flex items-center justify-end gap-4 pt-2">
+                        {reminderSaveSuccess && <p className="text-sm text-green-600 animate-fade-in-out">Configurações salvas com sucesso!</p>}
+                        <button type="submit" disabled={isSavingReminders} className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition disabled:bg-gray-400">
+                            {isSavingReminders ? 'Salvando...' : 'Salvar Lembretes'}
+                        </button>
                     </div>
                 </form>
             </div>

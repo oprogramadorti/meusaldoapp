@@ -27,8 +27,6 @@ const TransactionsPage: React.FC = () => {
     const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
     const [enableBilling, setEnableBilling] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
-    const [isRecurring, setIsRecurring] = useState(false);
-    const [installments, setInstallments] = useState<number | ''>(2);
     
     const initialFormData = {
         description: '',
@@ -41,7 +39,9 @@ const TransactionsPage: React.FC = () => {
         accountId: '',
         isPaid: false,
         creditorName: '',
-        creditorPhone: ''
+        creditorPhone: '',
+        isRecurring: false,
+        recurrenceEndDate: '',
     };
     const [formData, setFormData] = useState(initialFormData);
 
@@ -52,7 +52,13 @@ const TransactionsPage: React.FC = () => {
         const { name, value, type } = e.target;
         
         if (type === 'checkbox') {
-            setFormData(prev => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }));
+            const checked = (e.target as HTMLInputElement).checked;
+            setFormData(prev => ({ 
+                ...prev, 
+                [name]: checked,
+                // Reset recurrence end date if recurrence is disabled
+                ...(!checked && name === 'isRecurring' && { recurrenceEndDate: '' })
+            }));
         } else if (name === 'type') {
             setFormData(prev => ({ ...prev, type: value as TransactionType, categoryId: '', subcategoryId: '' }));
             if(value !== TransactionType.CREDIT) setEnableBilling(false);
@@ -74,9 +80,10 @@ const TransactionsPage: React.FC = () => {
 
     const filteredTransactions = useMemo(() => 
         transactions.filter(t => {
-            const transactionDate = new Date(t.date);
-            return transactionDate.getMonth() === currentDate.getMonth() && transactionDate.getFullYear() === currentDate.getFullYear();
-        }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+            const effectiveDateStr = t.dueDate || t.date;
+            const [year, month] = effectiveDateStr.split('-').map(Number);
+            return (month - 1) === currentDate.getMonth() && year === currentDate.getFullYear();
+        }).sort((a, b) => (b.dueDate || b.date).localeCompare(a.dueDate || a.date)),
         [transactions, currentDate]
     );
 
@@ -86,13 +93,12 @@ const TransactionsPage: React.FC = () => {
         setEnableBilling(false);
         setIsModalOpen(true);
         setActiveMenu(null);
-        setIsRecurring(false);
-        setInstallments(2);
     };
 
     const openModalForEdit = (transaction: Transaction) => {
         setEditingTransaction(transaction);
-        setFormData({ 
+        setFormData({
+            ...initialFormData, // Start with defaults to ensure all fields are present
             ...transaction,
             date: new Date(transaction.date).toISOString().split('T')[0],
             dueDate: transaction.dueDate ? new Date(transaction.dueDate).toISOString().split('T')[0] : '',
@@ -113,9 +119,11 @@ const TransactionsPage: React.FC = () => {
             categoryId: formData.categoryId,
             accountId: formData.accountId,
             isPaid: formData.isPaid,
+            isRecurring: formData.isRecurring,
             // Optional fields are only included if they have a value
             ...(formData.dueDate && { dueDate: formData.dueDate }),
             ...(formData.subcategoryId && { subcategoryId: formData.subcategoryId }),
+            ...(formData.isRecurring && { recurrenceEndDate: formData.recurrenceEndDate }),
             ...(formData.type === TransactionType.CREDIT && enableBilling && formData.creditorName && { creditorName: formData.creditorName }),
             ...(formData.type === TransactionType.CREDIT && enableBilling && formData.creditorPhone && { creditorPhone: formData.creditorPhone }),
         };
@@ -123,7 +131,7 @@ const TransactionsPage: React.FC = () => {
         if (editingTransaction) {
             updateTransaction({ ...payload, id: editingTransaction.id });
         } else {
-            addTransaction(payload, isRecurring ? Number(installments) : 1);
+            addTransaction(payload);
         }
         setIsModalOpen(false);
     };
@@ -248,7 +256,7 @@ const TransactionsPage: React.FC = () => {
                                     <input type="text" name="description" value={formData.description} onChange={handleFormChange} required className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Valor {isRecurring && '(por parcela)'}</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Valor</label>
                                     <input type="number" step="0.01" name="amount" value={formData.amount} onChange={handleFormChange} required className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
                                 </div>
                                 <div>
@@ -280,24 +288,21 @@ const TransactionsPage: React.FC = () => {
                                         {availableSubcategories.map(sub => <option key={sub.id} value={sub.id}>{sub.name}</option>)}
                                     </select>
                                 </div>
-                            </div>
-                            
-                            {!editingTransaction && (
-                                <div className="pt-4 mt-4 border-t border-gray-200 dark:border-gray-700 space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <label htmlFor="isRecurringToggle" className="text-sm font-medium text-gray-700 dark:text-gray-300">Lançamento parcelado?</label>
-                                        <button type="button" id="isRecurringToggle" onClick={() => setIsRecurring(!isRecurring)} className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors ${isRecurring ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-600'}`} aria-pressed={isRecurring}>
-                                            <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${isRecurring ? 'translate-x-6' : 'translate-x-1'}`} />
-                                        </button>
+                                <div className="md:col-span-2">
+                                    <div className="flex items-center gap-2 pt-2">
+                                        <input type="checkbox" id="isRecurring" name="isRecurring" checked={formData.isRecurring} onChange={handleFormChange} disabled={!!editingTransaction} className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 disabled:opacity-50" />
+                                        <label htmlFor="isRecurring" className="text-sm font-medium text-gray-700 dark:text-gray-300">Lançamento Recorrente (Parcelado)</label>
                                     </div>
-                                    {isRecurring && (
-                                        <div className="animate-fade-in-up">
-                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nº de parcelas</label>
-                                            <input type="number" min="2" max="120" value={installments} onChange={(e) => setInstallments(e.target.value === '' ? '' : parseInt(e.target.value, 10))} required={isRecurring} className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"/>
-                                        </div>
-                                    )}
                                 </div>
-                            )}
+
+                                {formData.isRecurring && (
+                                    <div className="md:col-span-2 animate-fade-in-up">
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data Final da Recorrência</label>
+                                        <input type="date" name="recurrenceEndDate" value={formData.recurrenceEndDate || ''} onChange={handleFormChange} required={formData.isRecurring} disabled={!!editingTransaction} className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50" />
+                                        {!!editingTransaction && <p className="text-xs text-gray-500 mt-1">A recorrência não pode ser alterada na edição de uma única parcela.</p>}
+                                    </div>
+                                )}
+                            </div>
 
                              {formData.type === TransactionType.DEBIT && (
                                 <div className="flex items-center gap-2 pt-2">
