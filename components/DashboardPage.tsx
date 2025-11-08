@@ -76,22 +76,22 @@ const DashboardPage: React.FC = () => {
                  <thead>
                      <tr className="border-b dark:border-gray-700">
                          <th className="py-2 w-1/2">Descrição</th>
-                         <th className="py-2 w-1/4">Data</th>
-                         <th className="py-2 w-1/4 text-right">Valor</th>
+                         <th className="py-2 w-1/6 text-center">Data</th>
+                         <th className="py-2 w-1/3 text-right">Valor</th>
                      </tr>
                  </thead>
                  <tbody>
                      {recentTransactions.length > 0 ? recentTransactions.map(t => (
-                         <tr key={t.id} className="border-b dark:border-gray-700">
-                             <td className="py-3 truncate">{t.description}</td>
-                             <td className="py-3">{new Date(t.dueDate || t.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
-                             <td className={`py-3 text-right font-medium ${getAmountClass(t)}`}>
+                         <tr key={t.id} className="border-b dark:border-gray-700 last:border-b-0">
+                             <td className="py-3 truncate pr-2">{t.description}</td>
+                             <td className="py-3 text-center whitespace-nowrap">{new Date(t.dueDate || t.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+                             <td className={`py-3 text-right font-medium whitespace-nowrap ${getAmountClass(t)}`}>
                                  {t.type === TransactionType.DEBIT && '- '}{formatCurrency(t.amount)}
                              </td>
                          </tr>
                      )) : (
                         <tr>
-                            <td colSpan={3} className="text-center py-5 text-gray-600">Nenhuma transação registrada.</td>
+                            <td colSpan={3} className="text-center py-5 text-gray-600 dark:text-gray-400">Nenhuma transação registrada.</td>
                         </tr>
                      )}
                  </tbody>
