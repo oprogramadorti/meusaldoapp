@@ -20,6 +20,7 @@ const SettingsPage: React.FC = () => {
     const { currentUser } = useAuth();
     
     const [settings, setSettings] = useState(evolutionAPISettings);
+    const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [testPhoneNumber, setTestPhoneNumber] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
@@ -41,14 +42,17 @@ const SettingsPage: React.FC = () => {
     const [isSavingReminders, setIsSavingReminders] = useState(false);
     const [reminderSaveSuccess, setReminderSaveSuccess] = useState(false);
 
+    // Sync local API settings state with context
     useEffect(() => {
         setSettings(evolutionAPISettings);
     }, [evolutionAPISettings]);
     
+    // Sync local reminder settings state with context
     useEffect(() => {
         setLocalReminderSettings(reminderSettings);
     }, [reminderSettings]);
 
+    // Check for biometric support on mount
     useEffect(() => {
         const checkSupport = async () => {
             if (window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()) {
@@ -60,13 +64,39 @@ const SettingsPage: React.FC = () => {
         checkSupport();
         setIsBiometricEnabled(localStorage.getItem('biometricUnlockEnabled') === 'true');
     }, []);
-
-    const handleSave = (e: React.FormEvent) => {
-        e.preventDefault();
-        setEvolutionAPISettings(settings);
-        alert('Configurações salvas com sucesso!');
-    };
     
+    // Autosave API settings with debounce
+    useEffect(() => {
+        // Prevent saving on initial render or if settings haven't changed
+        if (JSON.stringify(settings) === JSON.stringify(evolutionAPISettings)) {
+            return;
+        }
+
+        setSaveStatus('saving');
+        const timer = setTimeout(() => {
+            setEvolutionAPISettings(settings)
+                .then(() => {
+                    setSaveStatus('saved');
+                })
+                .catch(() => {
+                    setSaveStatus('error');
+                });
+        }, 1500); // 1.5-second debounce
+
+        return () => clearTimeout(timer);
+    }, [settings, evolutionAPISettings, setEvolutionAPISettings]);
+
+    const handleApiSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setSettings(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleApiInputFocus = () => {
+        if (saveStatus === 'saved' || saveStatus === 'error') {
+            setSaveStatus('idle');
+        }
+    };
+
     const handleTest = async () => {
         if (!testPhoneNumber) {
             alert('Por favor, insira um número de telefone para o teste.');
@@ -165,16 +195,18 @@ const SettingsPage: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h3 className="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Configuração da Evolution API</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-                    Insira os dados da sua instância da Evolution API para ativar notificações.
+                    Insira os dados da sua instância da Evolution API para ativar notificações. As alterações são salvas automaticamente.
                 </p>
-                <form onSubmit={handleSave} className="space-y-4">
+                <div className="space-y-4">
                     <div>
                         <label htmlFor="serverUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300">URL do Servidor</label>
                         <input
                             type="url"
                             id="serverUrl"
+                            name="serverUrl"
                             value={settings.serverUrl}
-                            onChange={e => setSettings(s => ({ ...s, serverUrl: e.target.value }))}
+                            onChange={handleApiSettingsChange}
+                            onFocus={handleApiInputFocus}
                             placeholder="https://example.com"
                             className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                             required
@@ -185,8 +217,10 @@ const SettingsPage: React.FC = () => {
                         <input
                             type="text"
                             id="instanceName"
+                            name="instanceName"
                             value={settings.instanceName}
-                            onChange={e => setSettings(s => ({ ...s, instanceName: e.target.value }))}
+                            onChange={handleApiSettingsChange}
+                            onFocus={handleApiInputFocus}
                             placeholder="my-instance"
                             className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"
                             required
@@ -197,8 +231,10 @@ const SettingsPage: React.FC = () => {
                         <input
                             type="password"
                             id="apiKey"
+                            name="apiKey"
                             value={settings.apiKey}
-                            onChange={e => setSettings(s => ({ ...s, apiKey: e.target.value }))}
+                            onChange={handleApiSettingsChange}
+                            onFocus={handleApiInputFocus}
                             placeholder="Sua chave de API secreta"
                             className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"
                             required
@@ -209,8 +245,10 @@ const SettingsPage: React.FC = () => {
                         <input
                             type="text"
                             id="notificationPhoneNumber"
+                            name="notificationPhoneNumber"
                             value={settings.notificationPhoneNumber || ''}
-                            onChange={e => setSettings(s => ({ ...s, notificationPhoneNumber: e.target.value }))}
+                            onChange={handleApiSettingsChange}
+                            onFocus={handleApiInputFocus}
                             placeholder="Ex: 5511999998888 (com DDI)"
                             className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"
                         />
@@ -223,8 +261,10 @@ const SettingsPage: React.FC = () => {
                         <input
                             type="text"
                             id="pixKey"
+                            name="pixKey"
                             value={settings.pixKey || ''}
-                            onChange={e => setSettings(s => ({ ...s, pixKey: e.target.value }))}
+                            onChange={handleApiSettingsChange}
+                            onFocus={handleApiInputFocus}
                             placeholder="Sua chave PIX (CPF, e-mail, etc.)"
                             className="mt-1 block w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3"
                         />
@@ -232,10 +272,12 @@ const SettingsPage: React.FC = () => {
                            Esta chave será incluída nas mensagens de cobrança automática.
                         </p>
                     </div>
-                    <div className="text-right">
-                        <button type="submit" className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition duration-300">Salvar API</button>
+                    <div className="text-right h-6 flex items-center justify-end">
+                        {saveStatus === 'saving' && <p className="text-sm text-gray-500 dark:text-gray-400 animate-pulse">Salvando...</p>}
+                        {saveStatus === 'saved' && <p className="text-sm text-green-600 dark:text-green-400">Salvo.</p>}
+                        {saveStatus === 'error' && <p className="text-sm text-red-600 dark:text-red-400">Erro ao salvar.</p>}
                     </div>
-                </form>
+                </div>
             </div>
 
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">

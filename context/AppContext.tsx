@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useCallback, useState, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, writeBatch, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, writeBatch, setDoc, where, getDocs, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { 
@@ -27,21 +27,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [categories, setCategories] = useState<Category[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  // Fix: Renamed useState setter to avoid redeclaration.
   const [reminderSettings, setReminderSettingsState] = useState<ReminderSettings>({
     isEnabled: false,
     daysBefore: 1,
     messageTemplate: 'Olá {nome}! Lembrete: seu débito no valor de {valor} vence em breve.\n\nSegue chave PIX para pagamento: {pix}',
   });
-
-  // LocalStorage-backed state for settings
-  const [evolutionAPISettings, setEvolutionAPISettings] = useLocalStorage<EvolutionAPISettings>('evolutionAPISettings', {
+  const [evolutionAPISettings, setEvolutionAPISettingsState] = useState<EvolutionAPISettings>({
     serverUrl: '',
     instanceName: '',
     apiKey: '',
     notificationPhoneNumber: '',
     pixKey: ''
   });
+
+  // LocalStorage-backed state for theme
   const [theme, setTheme] = useLocalStorage<Theme>('theme', 'system');
 
   // Theme logic
@@ -60,11 +59,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCategories([]);
         setSubcategories([]);
         setAccounts([]);
-        // Fix: Use the renamed useState setter.
         setReminderSettingsState({
             isEnabled: false,
             daysBefore: 1,
             messageTemplate: 'Olá {nome}! Lembrete: seu débito no valor de {valor} vence em breve.\n\nSegue chave PIX para pagamento: {pix}',
+        });
+        setEvolutionAPISettingsState({
+            serverUrl: '',
+            instanceName: '',
+            apiKey: '',
+            notificationPhoneNumber: '',
+            pixKey: ''
         });
         return;
     }
@@ -89,8 +94,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
      const unsubscribeSettings = onSnapshot(doc(db, userRef, "settings", "reminders"), (doc) => {
         if (doc.exists()) {
-            // Fix: Use the renamed useState setter.
             setReminderSettingsState(doc.data() as ReminderSettings);
+        }
+    });
+    const unsubscribeEvoSettings = onSnapshot(doc(db, userRef, "settings", "evolutionAPI"), (doc) => {
+        if (doc.exists()) {
+            setEvolutionAPISettingsState(doc.data() as EvolutionAPISettings);
         }
     });
 
@@ -100,6 +109,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubscribeSubcategories();
       unsubscribeAccounts();
       unsubscribeSettings();
+      unsubscribeEvoSettings();
     };
   }, [currentUser]);
 
@@ -108,19 +118,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>) => {
     if (!currentUser) return;
   
-    if (transaction.isRecurring && transaction.recurrenceEndDate) {
+    if (transaction.isRecurring && transaction.installments) {
       const batch = writeBatch(db);
       const recurrenceId = uuidv4();
   
-      // Use UTC noon to avoid timezone-related date shifts when parsing YYYY-MM-DD
       const startDate = new Date(`${transaction.date}T12:00:00Z`);
-      const endDate = new Date(`${transaction.recurrenceEndDate}T12:00:00Z`);
-  
-      if (startDate > endDate) {
-        console.error("Recurrence start date cannot be after end date.");
-        // Optionally: show an error to the user
-        return;
-      }
+      const totalMonths = transaction.installments;
   
       let currentDate = new Date(startDate);
       const originalDay = startDate.getUTCDate();
@@ -137,9 +140,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dueMonthOffset = dueMonthTotal - startMonthTotal;
       }
   
-      const totalMonths = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 + (endDate.getUTCMonth() - startDate.getUTCMonth()) + 1;
-  
-      for (let i = 0; i < totalMonths && currentDate <= endDate; i++) {
+      for (let i = 0; i < totalMonths; i++) {
         const newTransactionDocRef = doc(collection(db, `users/${currentUser.uid}/transactions`));
   
         const newTransactionData: Omit<Transaction, 'id'> = {
@@ -148,6 +149,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           date: currentDate.toISOString().split('T')[0],
           recurrenceId: recurrenceId,
           isRecurring: true, 
+          installments: totalMonths,
         };
   
         if (hasDueDate && dueDay !== undefined) {
@@ -177,9 +179,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { id, ...dataToUpdate } = updatedTransaction;
     await updateDoc(doc(db, `users/${currentUser.uid}/transactions`, id), dataToUpdate);
   }, [currentUser]);
+
   const deleteTransaction = useCallback(async (id: string) => {
     if (!currentUser) return;
-    await deleteDoc(doc(db, `users/${currentUser.uid}/transactions`, id));
+
+    const transactionDocRef = doc(db, `users/${currentUser.uid}/transactions`, id);
+    
+    try {
+        const transactionDoc = await getDoc(transactionDocRef);
+        if (!transactionDoc.exists()) {
+            console.log("Transaction not found, might be already deleted.");
+            return;
+        }
+
+        const transactionData = transactionDoc.data();
+        const recurrenceId = transactionData?.recurrenceId;
+
+        if (recurrenceId) {
+            // It's a recurring transaction, delete all in the series
+            const batch = writeBatch(db);
+            const transactionsCollectionRef = collection(db, `users/${currentUser.uid}/transactions`);
+            const q = query(transactionsCollectionRef, where("recurrenceId", "==", recurrenceId));
+            
+            const querySnapshot = await getDocs(q);
+            querySnapshot.forEach((doc) => {
+                batch.delete(doc.ref);
+            });
+            
+            await batch.commit();
+        } else {
+            // It's a single transaction
+            await deleteDoc(transactionDocRef);
+        }
+    } catch (error) {
+        console.error("Error deleting transaction(s): ", error);
+    }
   }, [currentUser]);
 
   // Categories
@@ -231,6 +265,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         daysBefore: Number(settings.daysBefore)
     };
     await setDoc(settingsRef, settingsToSave, { merge: true });
+  }, [currentUser]);
+  
+  // Evolution API Settings
+  const setEvolutionAPISettings = useCallback(async (settings: EvolutionAPISettings) => {
+      if (!currentUser) return;
+      const settingsRef = doc(db, `users/${currentUser.uid}/settings`, 'evolutionAPI');
+      await setDoc(settingsRef, settings, { merge: true });
   }, [currentUser]);
   
   // Evolution API

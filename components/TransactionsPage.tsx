@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { Transaction, TransactionType, Category, Subcategory } from '../types';
 import PencilIcon from './icons/PencilIcon';
@@ -21,6 +22,9 @@ const TransactionsPage: React.FC = () => {
         deleteTransaction 
     } = useAppContext();
 
+    const location = useLocation();
+    const navigate = useNavigate();
+
     const [currentDate, setCurrentDate] = useState(new Date());
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -41,7 +45,7 @@ const TransactionsPage: React.FC = () => {
         creditorName: '',
         creditorPhone: '',
         isRecurring: false,
-        recurrenceEndDate: '',
+        installments: '' as (number | ''),
     };
     const [formData, setFormData] = useState(initialFormData);
 
@@ -56,8 +60,8 @@ const TransactionsPage: React.FC = () => {
             setFormData(prev => ({ 
                 ...prev, 
                 [name]: checked,
-                // Reset recurrence end date if recurrence is disabled
-                ...(!checked && name === 'isRecurring' && { recurrenceEndDate: '' })
+                // Reset installments if recurrence is disabled
+                ...(!checked && name === 'isRecurring' && { installments: '' })
             }));
         } else if (name === 'type') {
             setFormData(prev => ({ ...prev, type: value as TransactionType, categoryId: '', subcategoryId: '' }));
@@ -95,6 +99,14 @@ const TransactionsPage: React.FC = () => {
         setActiveMenu(null);
     };
 
+    useEffect(() => {
+        if (location.state?.openNewTransactionModal) {
+            openModalForNew();
+            // Clear the state so the modal doesn't reopen on refresh or back navigation
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.state, navigate]);
+
     const openModalForEdit = (transaction: Transaction) => {
         setEditingTransaction(transaction);
         setFormData({
@@ -102,6 +114,7 @@ const TransactionsPage: React.FC = () => {
             ...transaction,
             date: new Date(transaction.date).toISOString().split('T')[0],
             dueDate: transaction.dueDate ? new Date(transaction.dueDate).toISOString().split('T')[0] : '',
+            installments: transaction.installments || '',
         });
         setEnableBilling(!!(transaction.type === TransactionType.CREDIT && transaction.creditorName && transaction.creditorPhone));
         setIsModalOpen(true);
@@ -123,7 +136,7 @@ const TransactionsPage: React.FC = () => {
             // Optional fields are only included if they have a value
             ...(formData.dueDate && { dueDate: formData.dueDate }),
             ...(formData.subcategoryId && { subcategoryId: formData.subcategoryId }),
-            ...(formData.isRecurring && { recurrenceEndDate: formData.recurrenceEndDate }),
+            ...(formData.isRecurring && { installments: Number(formData.installments) }),
             ...(formData.type === TransactionType.CREDIT && enableBilling && formData.creditorName && { creditorName: formData.creditorName }),
             ...(formData.type === TransactionType.CREDIT && enableBilling && formData.creditorPhone && { creditorPhone: formData.creditorPhone }),
         };
@@ -297,8 +310,21 @@ const TransactionsPage: React.FC = () => {
 
                                 {formData.isRecurring && (
                                     <div className="md:col-span-2 animate-fade-in-up">
-                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Data Final da Recorrência</label>
-                                        <input type="date" name="recurrenceEndDate" value={formData.recurrenceEndDate || ''} onChange={handleFormChange} required={formData.isRecurring} disabled={!!editingTransaction} className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50" />
+                                        <label htmlFor="installments" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Número de Parcelas</label>
+                                        <select
+                                            id="installments"
+                                            name="installments"
+                                            value={formData.installments || ''}
+                                            onChange={handleFormChange}
+                                            required={formData.isRecurring}
+                                            disabled={!!editingTransaction}
+                                            className="mt-1 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                                        >
+                                            <option value="" disabled>Selecione...</option>
+                                            {Array.from({ length: 12 }, (_, i) => i + 1).map(num => (
+                                                <option key={num} value={num}>{num}x</option>
+                                            ))}
+                                        </select>
                                         {!!editingTransaction && <p className="text-xs text-gray-500 mt-1">A recorrência não pode ser alterada na edição de uma única parcela.</p>}
                                     </div>
                                 )}
@@ -343,7 +369,7 @@ const TransactionsPage: React.FC = () => {
                 </div>
             )}
 
-            <ConfirmationModal isOpen={!!transactionToDelete} onClose={() => setTransactionToDelete(null)} onConfirm={handleDelete} title="Confirmar Exclusão" message="Tem certeza de que deseja excluir esta transação? Esta ação não pode ser desfeita."/>
+            <ConfirmationModal isOpen={!!transactionToDelete} onClose={() => setTransactionToDelete(null)} onConfirm={handleDelete} title="Confirmar Exclusão" message="Tem certeza de que deseja excluir esta transação? Todas as parcelas associadas também serão removidas."/>
         
             <FloatingActionButton onClick={openModalForNew} />
         </div>

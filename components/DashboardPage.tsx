@@ -1,9 +1,16 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { Transaction, TransactionType } from '../types';
+import FloatingActionButton from './FloatingActionButton';
 
 const DashboardPage: React.FC = () => {
   const { transactions, accounts } = useAppContext();
+  const navigate = useNavigate();
+
+  const handleAddNewTransaction = () => {
+    navigate('/transactions', { state: { openNewTransactionModal: true } });
+  };
 
   const totalBalance = accounts.reduce((sum, account) => sum + account.initialBalance, 0) +
                        transactions.reduce((sum, t) => t.type === TransactionType.CREDIT ? sum + t.amount : sum - t.amount, 0);
@@ -65,18 +72,18 @@ const DashboardPage: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
          <h3 className="text-xl font-bold mb-4">Últimas Transações</h3>
          <div className="overflow-x-auto">
-             <table className="w-full text-left">
+             <table className="w-full text-left table-fixed">
                  <thead>
                      <tr className="border-b dark:border-gray-700">
-                         <th className="py-2">Descrição</th>
-                         <th className="py-2">Data</th>
-                         <th className="py-2 text-right">Valor</th>
+                         <th className="py-2 w-1/2">Descrição</th>
+                         <th className="py-2 w-1/4">Data</th>
+                         <th className="py-2 w-1/4 text-right">Valor</th>
                      </tr>
                  </thead>
                  <tbody>
                      {recentTransactions.length > 0 ? recentTransactions.map(t => (
                          <tr key={t.id} className="border-b dark:border-gray-700">
-                             <td className="py-3">{t.description}</td>
+                             <td className="py-3 truncate">{t.description}</td>
                              <td className="py-3">{new Date(t.dueDate || t.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
                              <td className={`py-3 text-right font-medium ${getAmountClass(t)}`}>
                                  {t.type === TransactionType.DEBIT && '- '}{formatCurrency(t.amount)}
@@ -91,6 +98,7 @@ const DashboardPage: React.FC = () => {
              </table>
          </div>
       </div>
+      <FloatingActionButton onClick={handleAddNewTransaction} />
     </div>
   );
 };

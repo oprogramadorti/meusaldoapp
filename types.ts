@@ -17,6 +17,7 @@ export interface Transaction {
   accountId: string;
   isRecurring?: boolean;
   recurrenceEndDate?: string;
+  installments?: number;
   recurrenceId?: string;
   isPaid?: boolean;
   creditorName?: string;
@@ -74,7 +75,7 @@ export interface AppContextType {
   updateAccount: (account: Account) => Promise<void>;
   deleteAccount: (id: string) => Promise<void>;
   evolutionAPISettings: EvolutionAPISettings;
-  setEvolutionAPISettings: (settings: EvolutionAPISettings) => void;
+  setEvolutionAPISettings: (settings: EvolutionAPISettings) => Promise<void>;
   reminderSettings: ReminderSettings;
   setReminderSettings: (settings: ReminderSettings) => Promise<void>;
   sendTestMessage: (phoneNumber: string) => Promise<{ success: boolean; message: string }>;
