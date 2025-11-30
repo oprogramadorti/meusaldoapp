@@ -31,6 +31,7 @@ const TransactionsPage: React.FC = () => {
     const [transactionToDelete, setTransactionToDelete] = useState<string | null>(null);
     const [enableBilling, setEnableBilling] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
+    const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
     
     const initialFormData = {
         description: '',
@@ -84,11 +85,17 @@ const TransactionsPage: React.FC = () => {
 
     const filteredTransactions = useMemo(() => 
         transactions.filter(t => {
+            // Filter by Date
             const effectiveDateStr = t.dueDate || t.date;
             const [year, month] = effectiveDateStr.split('-').map(Number);
-            return (month - 1) === currentDate.getMonth() && year === currentDate.getFullYear();
+            const isSameMonth = (month - 1) === currentDate.getMonth() && year === currentDate.getFullYear();
+            
+            // Filter by Type (Credit/Debit)
+            const isSameType = filterType === 'all' || t.type === filterType;
+
+            return isSameMonth && isSameType;
         }).sort((a, b) => (b.dueDate || b.date).localeCompare(a.dueDate || a.date)),
-        [transactions, currentDate]
+        [transactions, currentDate, filterType]
     );
 
     const openModalForNew = () => {
@@ -170,6 +177,19 @@ const TransactionsPage: React.FC = () => {
     ];
     const getTagColor = (name: string = '') => tagColors[name.length % tagColors.length];
 
+    const FilterButton = ({ label, type }: { label: string; type: 'all' | TransactionType }) => (
+        <button
+            onClick={() => setFilterType(type)}
+            className={`px-4 py-2 text-sm font-medium rounded-full transition-colors border ${
+                filterType === type
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+            }`}
+        >
+            {label}
+        </button>
+    );
+
     const TransactionItem: React.FC<{ transaction: Transaction }> = ({ transaction }) => {
         const account = accounts.find(a => a.id === transaction.accountId);
         const category = categories.find(c => c.id === transaction.categoryId);
@@ -233,6 +253,12 @@ const TransactionsPage: React.FC = () => {
                 <button onClick={handlePreviousMonth} className="p-2 rounded-full hover:bg-red-700 transition-colors"><ChevronLeftIcon className="w-6 h-6"/></button>
                 <span className="font-bold text-lg capitalize">{currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' })}</span>
                 <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-red-700 transition-colors"><ChevronRightIcon className="w-6 h-6"/></button>
+            </div>
+
+            <div className="flex gap-2 py-2 overflow-x-auto">
+                <FilterButton label="Todos" type="all" />
+                <FilterButton label="Débitos" type={TransactionType.DEBIT} />
+                <FilterButton label="Créditos" type={TransactionType.CREDIT} />
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
