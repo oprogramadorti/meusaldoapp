@@ -1,17 +1,17 @@
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 
+// Correção do Service Worker para ambientes com restrição de origem (AI Studio/Sandboxes)
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then(registration => {
-      console.log('SW registered: ', registration);
-    }).catch(registrationError => {
-      console.log('SW registration failed: ', registrationError);
+  // Registro silencioso com caminho relativo para evitar erros de mismatch de origem em frames cross-origin
+  navigator.serviceWorker.register('./sw.js', { scope: './' })
+    .catch(() => {
+      // Falha silenciosa se o ambiente não permitir Service Workers (ex: frames do AI Studio)
     });
-  });
 }
 
 const rootElement = document.getElementById('root');

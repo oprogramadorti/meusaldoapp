@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import FingerPrintIcon from './icons/FingerPrintIcon';
 import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -9,6 +9,9 @@ import KeyIcon from './icons/KeyIcon';
 import EyeIcon from './icons/EyeIcon';
 import EyeSlashIcon from './icons/EyeSlashIcon';
 import BellIcon from './icons/BellIcon';
+import DocumentArrowDownIcon from './icons/DocumentArrowDownIcon';
+import TrashIcon from './icons/TrashIcon';
+import ConfirmationModal from './ConfirmationModal';
 
 const SettingsPage: React.FC = () => {
     const { 
@@ -16,7 +19,12 @@ const SettingsPage: React.FC = () => {
         setEvolutionAPISettings, 
         sendTestMessage,
         reminderSettings,
-        setReminderSettings
+        setReminderSettings,
+        transactions,
+        categories,
+        subcategories,
+        accounts,
+        resetTransactions
     } = useAppContext();
     const { currentUser } = useAuth();
     
@@ -42,6 +50,10 @@ const SettingsPage: React.FC = () => {
     const [localReminderSettings, setLocalReminderSettings] = useState(reminderSettings);
     const [isSavingReminders, setIsSavingReminders] = useState(false);
     const [reminderSaveSuccess, setReminderSaveSuccess] = useState(false);
+
+    // State for data management
+    const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+    const [isResetting, setIsResetting] = useState(false);
 
     // Sync local API settings state with context
     useEffect(() => {
@@ -198,9 +210,101 @@ const SettingsPage: React.FC = () => {
         }
     };
 
+    const handleExportCSV = () => {
+        if (transactions.length === 0) {
+            alert("Não há dados para exportar.");
+            return;
+        }
+
+        const headers = ["ID", "Descrição", "Valor", "Data", "Vencimento", "Tipo", "Categoria", "Subcategoria", "Conta", "Pago", "Recorrente", "Parcelas"];
+        const rows = transactions.map(t => {
+            const cat = categories.find(c => c.id === t.categoryId)?.name || "";
+            const sub = subcategories.find(s => s.id === t.subcategoryId)?.name || "";
+            const acc = accounts.find(a => a.id === t.accountId)?.name || "";
+            
+            return [
+                t.id,
+                t.description.replace(/,/g, "."), // Avoid CSV delimiter issues
+                t.amount.toString(),
+                t.date,
+                t.dueDate || "",
+                t.type,
+                cat,
+                sub,
+                acc,
+                t.isPaid ? "Sim" : "Não",
+                t.isRecurring ? "Sim" : "Não",
+                t.installments?.toString() || ""
+            ];
+        });
+
+        const csvContent = [
+            headers.join(","),
+            ...rows.map(row => row.join(","))
+        ].join("\n");
+
+        const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `meu_saldo_backup_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleResetData = async () => {
+        setIsResetting(true);
+        try {
+            await resetTransactions();
+            alert("Todos os lançamentos foram removidos com sucesso.");
+        } catch (error) {
+            console.error("Failed to reset data", error);
+            alert("Ocorreu um erro ao tentar limpar os dados.");
+        } finally {
+            setIsResetting(false);
+            setIsResetModalOpen(false);
+        }
+    };
+
     return (
         <div className="space-y-8 max-w-4xl mx-auto">
             <h2 className="text-3xl font-bold text-gray-800 dark:text-white">Configurações</h2>
+
+            {/* Backup and Data Section */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h3 className="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                    <DocumentArrowDownIcon className="w-6 h-6" /> Backup e Dados
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    Gerencie seus dados. Você pode exportar todas as suas transações para um arquivo CSV ou limpar todos os lançamentos do sistema.
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900/40">
+                        <h4 className="font-bold text-gray-800 dark:text-white mb-1">Exportar Backup</h4>
+                        <p className="text-xs text-gray-500 mb-4">Gera um arquivo CSV com todos os seus débitos e créditos.</p>
+                        <button 
+                            onClick={handleExportCSV}
+                            className="flex items-center justify-center gap-2 w-full py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 transition font-medium"
+                        >
+                            <DocumentArrowDownIcon className="w-5 h-5" /> Exportar para CSV
+                        </button>
+                    </div>
+
+                    <div className="p-4 border border-red-100 dark:border-red-900/20 rounded-lg bg-red-50/50 dark:bg-red-900/10">
+                        <h4 className="font-bold text-red-800 dark:text-red-400 mb-1">Limpar Lançamentos</h4>
+                        <p className="text-xs text-red-600/70 dark:text-red-400/60 mb-4">Remove todas as receitas e despesas. Categorias e contas serão mantidas.</p>
+                        <button 
+                            onClick={() => setIsResetModalOpen(true)}
+                            className="flex items-center justify-center gap-2 w-full py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700 transition font-medium"
+                        >
+                            <TrashIcon className="w-5 h-5" /> Resetar Sistema
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h3 className="text-xl font-bold mb-4 border-b pb-2 border-gray-200 dark:border-gray-700">Configuração da Evolution API</h3>
@@ -468,6 +572,15 @@ const SettingsPage: React.FC = () => {
                     </p>
                 )}
             </div>
+
+            {/* Confirmation Modal for Reset */}
+            <ConfirmationModal 
+                isOpen={isResetModalOpen}
+                onClose={() => setIsResetModalOpen(false)}
+                onConfirm={handleResetData}
+                title="Confirmar Limpeza Total"
+                message="ATENÇÃO: Isso irá apagar permanentemente TODOS os débitos e créditos lançados no sistema. Suas contas cadastradas e categorias NÃO serão removidas. Esta ação não pode ser desfeita. Deseja continuar?"
+            />
         </div>
     );
 };

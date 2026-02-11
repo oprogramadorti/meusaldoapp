@@ -66,6 +66,7 @@ export interface AppContextType {
   updateTransaction: (transaction: Transaction) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   deleteTransactionsByMonth: (year: number, month: number) => Promise<void>;
+  resetTransactions: () => Promise<void>;
   categories: Category[];
   addCategory: (name: string, type: TransactionType) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;

@@ -241,6 +241,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [currentUser, transactions]);
 
+  const resetTransactions = useCallback(async () => {
+    if (!currentUser) return;
+    
+    try {
+        const userRef = `users/${currentUser.uid}`;
+        const transactionsCollectionRef = collection(db, userRef, "transactions");
+        const querySnapshot = await getDocs(transactionsCollectionRef);
+        
+        // Use batch to delete everything. 
+        // Note: Firestore batches are limited to 500 operations.
+        // For larger data sets, we would need a recursive or chunked approach.
+        let batch = writeBatch(db);
+        let count = 0;
+        
+        const deletePromises: Promise<void>[] = [];
+
+        for (const docSnapshot of querySnapshot.docs) {
+            batch.delete(docSnapshot.ref);
+            count++;
+            
+            if (count === 500) {
+                deletePromises.push(batch.commit());
+                batch = writeBatch(db);
+                count = 0;
+            }
+        }
+        
+        if (count > 0) {
+            deletePromises.push(batch.commit());
+        }
+
+        await Promise.all(deletePromises);
+        console.log("All transactions reset successfully.");
+    } catch (error) {
+        console.error("Error resetting transactions: ", error);
+        throw error;
+    }
+  }, [currentUser]);
+
   // Categories
   const addCategory = useCallback(async (name: string, type: TransactionType) => {
     if (!currentUser) return;
@@ -490,6 +529,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     updateTransaction,
     deleteTransaction,
     deleteTransactionsByMonth,
+    resetTransactions,
     categories,
     addCategory,
     deleteCategory,
@@ -508,7 +548,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     theme,
     setTheme,
   }), [
-    transactions, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsByMonth,
+    transactions, addTransaction, updateTransaction, deleteTransaction, deleteTransactionsByMonth, resetTransactions,
     categories, addCategory, deleteCategory,
     subcategories, addSubcategory, deleteSubcategory,
     accounts, addAccount, updateAccount, deleteAccount,

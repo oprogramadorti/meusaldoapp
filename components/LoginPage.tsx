@@ -1,9 +1,11 @@
+
+// Fix: Import React to resolve 'React' namespace errors (FC, FormEvent)
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
     signInWithEmailAndPassword, 
     createUserWithEmailAndPassword,
-    signInWithRedirect,
+    signInWithPopup,
     sendPasswordResetEmail,
     GoogleAuthProvider
 } from 'firebase/auth';
@@ -21,6 +23,7 @@ const LoginPage: React.FC = () => {
     const [error, setError] = useState('');
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
 
     // State for forgot password modal
@@ -40,9 +43,11 @@ const LoginPage: React.FC = () => {
     const handleAuthAction = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setIsLoading(true);
 
         if (!isLogin && password !== confirmPassword) {
             setError('As senhas não coincidem.');
+            setIsLoading(false);
             return;
         }
 
@@ -59,12 +64,16 @@ const LoginPage: React.FC = () => {
             }
             navigate('/');
         } catch (err: any) {
+            console.error("Auth error:", err);
             switch(err.code) {
                 case 'auth/user-not-found':
                     setError('Usuário não encontrado.');
                     break;
                 case 'auth/wrong-password':
                     setError('Senha incorreta.');
+                    break;
+                case 'auth/invalid-credential':
+                    setError('Credenciais inválidas. Verifique seu e-mail e senha.');
                     break;
                 case 'auth/email-already-in-use':
                     setError('Este e-mail já está em uso.');
@@ -73,23 +82,42 @@ const LoginPage: React.FC = () => {
                     setError('A senha deve ter pelo menos 6 caracteres.');
                     break;
                 case 'auth/invalid-api-key':
-                     setError('Erro de configuração: A chave da API do Firebase é inválida. Verifique o arquivo firebase.ts.');
+                     setError('Erro de configuração: A chave da API do Firebase é inválida.');
                      break;
+                case 'auth/popup-blocked':
+                    setError('O popup de login foi bloqueado pelo seu navegador.');
+                    break;
+                case 'auth/popup-closed-by-user':
+                    setError('O login foi cancelado.');
+                    break;
                 default:
-                    setError('Ocorreu um erro. Verifique suas credenciais ou a configuração do Firebase.');
+                    setError('Ocorreu um erro ao autenticar. Tente novamente mais tarde.');
                     break;
             }
-            console.error(err);
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const handleGoogleSignIn = async () => {
         const provider = new GoogleAuthProvider();
+        setError('');
+        setIsLoading(true);
         try {
-            await signInWithRedirect(auth, provider);
-        } catch (err) {
-            setError('Falha ao iniciar o login com o Google. Tente novamente.');
-            console.error(err);
+            // Usando Popup em vez de Redirect para melhor suporte em ambientes de iframe/sandbox
+            await signInWithPopup(auth, provider);
+            navigate('/');
+        } catch (err: any) {
+            console.error("Google Sign-In Error:", err);
+            if (err.code === 'auth/popup-closed-by-user') {
+                setError('Login com Google cancelado.');
+            } else if (err.code === 'auth/invalid-credential') {
+                setError('Erro de credencial no Google. Tente novamente ou use e-mail/senha.');
+            } else {
+                setError('Falha ao iniciar o login com o Google. Verifique se o domínio está autorizado no Firebase.');
+            }
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -106,7 +134,7 @@ const LoginPage: React.FC = () => {
         setForgotPasswordMessage({ type: '', text: '' });
         try {
             await sendPasswordResetEmail(auth, forgotPasswordEmail);
-            setForgotPasswordMessage({ type: 'success', text: 'E-mail de recuperação enviado! Verifique sua caixa de entrada e pasta de spam.' });
+            setForgotPasswordMessage({ type: 'success', text: 'E-mail de recuperação enviado! Verifique sua caixa de entrada.' });
         } catch (error: any) {
             console.error("Password reset error:", error);
             switch (error.code) {
@@ -114,13 +142,10 @@ const LoginPage: React.FC = () => {
                     setForgotPasswordMessage({ type: 'error', text: 'Nenhum usuário encontrado com este e-mail.' });
                     break;
                 case 'auth/invalid-email':
-                    setForgotPasswordMessage({ type: 'error', text: 'O formato do e-mail é inválido. Verifique e tente novamente.' });
-                    break;
-                case 'auth/too-many-requests':
-                    setForgotPasswordMessage({ type: 'error', text: 'Muitas tentativas. Por favor, aguarde um momento antes de tentar novamente.' });
+                    setForgotPasswordMessage({ type: 'error', text: 'O formato do e-mail é inválido.' });
                     break;
                 default:
-                    setForgotPasswordMessage({ type: 'error', text: 'Ocorreu um erro ao enviar o e-mail. Verifique a configuração do Firebase e sua conexão.' });
+                    setForgotPasswordMessage({ type: 'error', text: 'Erro ao enviar e-mail. Tente novamente.' });
                     break;
             }
         } finally {
@@ -150,7 +175,8 @@ const LoginPage: React.FC = () => {
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="E-mail"
                         required
-                        className="w-full px-4 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isLoading}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                     />
                     <div className="relative">
                         <input
@@ -159,7 +185,8 @@ const LoginPage: React.FC = () => {
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="Senha"
                             required
-                            className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={isLoading}
+                            className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                         />
                         <button type="button" onClick={() => setIsPasswordVisible(!isPasswordVisible)} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 dark:text-gray-400">
                             {isPasswordVisible ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
@@ -174,7 +201,8 @@ const LoginPage: React.FC = () => {
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                                 placeholder="Confirmar Senha"
                                 required
-                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                disabled={isLoading}
+                                className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                             />
                              <button type="button" onClick={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)} className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 dark:text-gray-400">
                                 {isConfirmPasswordVisible ? <EyeSlashIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
@@ -205,9 +233,10 @@ const LoginPage: React.FC = () => {
 
                     <button
                         type="submit"
-                        className="w-full py-2 px-4 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        disabled={isLoading}
+                        className="w-full py-2 px-4 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                     >
-                        {isLogin ? 'Entrar' : 'Criar Conta'}
+                        {isLoading ? 'Processando...' : (isLogin ? 'Entrar' : 'Criar Conta')}
                     </button>
                 </form>
 
@@ -220,7 +249,8 @@ const LoginPage: React.FC = () => {
 
                 <button
                     onClick={handleGoogleSignIn}
-                    className="w-full flex justify-center items-center gap-2 py-2 px-4 font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600"
+                    disabled={isLoading}
+                    className="w-full flex justify-center items-center gap-2 py-2 px-4 font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
                 >
                     <svg className="w-5 h-5" viewBox="0 0 48 48">
                         <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6C42.21 39.2 46.98 32.66 46.98 24.55z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.82l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path><path fill="none" d="M0 0h48v48H0z"></path>
